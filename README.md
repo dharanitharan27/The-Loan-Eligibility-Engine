@@ -35,75 +35,73 @@ The **Loan Eligibility Engine** addresses the core challenge of matching thousan
 
 ```mermaid
 flowchart TD
-    subgraph UI ["User Interface Dashboard"]
-        Client[Borrower CSV Upload Portal]
-        Console[Pipeline Orchestrator & Live Monitor]
+    subgraph UI["User Interface Dashboard"]
+        Client["Borrower CSV Upload Portal"]
+        Console["Pipeline Orchestrator and Live Monitor"]
     end
 
-    subgraph Ingestion ["1. Scalable Event-Driven Ingestion"]
-        Presign[Lambda: Generate S3 Pre-signed URL]
-        S3Bucket[(Amazon S3: Uploads Bucket)]
-        S3Event[S3 ObjectCreated Event]
-        IngestWorker[Lambda: Streaming Chunk Ingest Worker]
+    subgraph Ingestion["1. Event-Driven Ingestion"]
+        Presign["Lambda: Generate Pre-signed URL"]
+        S3Bucket[("Amazon S3 Uploads Bucket")]
+        S3Event["S3 ObjectCreated Event"]
+        IngestWorker["Lambda: Streaming Ingest Worker"]
     end
 
-    subgraph DB ["Data Persistence Layer (Amazon RDS / PostgreSQL)"]
-        UsersTable[(users Table)]
-        ProductsTable[(loan_products Table)]
-        MatchesTable[(matches Table)]
-        BatchesTable[(ingestion_batches Table)]
+    subgraph DB["Data Persistence: PostgreSQL"]
+        UsersTable[("users")]
+        ProductsTable[("loan_products")]
+        MatchesTable[("matches")]
+        BatchesTable[("ingestion_batches")]
     end
 
-    subgraph n8n ["2. Self-Hosted n8n Orchestrator (Docker)"]
-        subgraph WA ["Workflow A: Loan Discovery Crawler"]
-            CronTrigger[Daily 2:00 AM Cron]
-            ScrapeBankBazaar[Scrape BankBazaar]
-            ScrapePaisaBazaar[Scrape Paisabazaar]
-            UpsertProducts[PostgreSQL Upsert]
-        end
-
-        subgraph WB ["Workflow B: User-Loan Matching (Treasure Hunt)"]
-            MatchWebhook[Webhook: Ingest Completed]
-            Stage1SQL[Stage 1: Indexed SQL Relational Filter]
-            Stage2Score[Stage 2: Algorithmic Scoring & Top-3 Rank]
-            Stage3AI[Stage 3: Batched AI Qualitative Advisory]
-            SaveMatches[PostgreSQL Insert Matches]
-        end
-
-        subgraph WC ["Workflow C: User Notification"]
-            NotifyWebhook[Webhook: Matches Ready]
-            FetchCandidates[Fetch Unnotified Matches]
-            RenderHTML[Build Responsive HTML Email]
-            SendSES[AWS SES Node: Dispatch Email]
-            UpdateNotified[Update notified = TRUE]
-        end
+    subgraph WorkflowA["Workflow A: Loan Discovery"]
+        CronTrigger["Daily 2 AM Cron"]
+        ScrapeBankBazaar["Scrape BankBazaar"]
+        ScrapePaisaBazaar["Scrape Paisabazaar"]
+        UpsertProducts["PostgreSQL Upsert"]
     end
 
-    subgraph Target ["3. Delivery & Verification"]
-        TestInbox[Safe Test Inbox Alias: abcd+test@gmail.com]
+    subgraph WorkflowB["Workflow B: Loan Matching"]
+        MatchWebhook["Ingestion Completed Webhook"]
+        Stage1SQL["Stage 1: SQL Filtering"]
+        Stage2Score["Stage 2: Scoring and Top 3 Ranking"]
+        Stage3AI["Stage 3: AI Advisory"]
+        SaveMatches["Save Matches"]
     end
 
-    %% Flow connections
-    Client -->|1. Request Pre-signed URL| Presign
-    Presign -->|2. Return S3 PUT URL| Client
-    Client -->|3. Direct HTTP PUT CSV| S3Bucket
-    S3Bucket -->|4. Trigger Event| S3Event
-    S3Event -->|5. Asynchronous Trigger| IngestWorker
-    IngestWorker -->|6. Stream 500-row chunks| UsersTable
-    IngestWorker -->|7. Update Batch Audit| BatchesTable
-    IngestWorker -->|8. POST Webhook| MatchWebhook
+    subgraph WorkflowC["Workflow C: Notifications"]
+        NotifyWebhook["Matches Ready Webhook"]
+        FetchCandidates["Fetch Unnotified Matches"]
+        RenderHTML["Build HTML Email"]
+        SendSES["AWS SES: Send Email"]
+        UpdateNotified["Mark as Notified"]
+    end
 
-    CronTrigger --> ScrapeBankBazaar & ScrapePaisaBazaar
-    ScrapeBankBazaar & ScrapePaisaBazaar --> UpsertProducts
+    TestInbox["Safe Test Inbox"]
+
+    Client --> Presign
+    Presign --> Client
+    Client --> S3Bucket
+    S3Bucket --> S3Event
+    S3Event --> IngestWorker
+    IngestWorker --> UsersTable
+    IngestWorker --> BatchesTable
+    IngestWorker --> MatchWebhook
+
+    CronTrigger --> ScrapeBankBazaar
+    CronTrigger --> ScrapePaisaBazaar
+    ScrapeBankBazaar --> UpsertProducts
+    ScrapePaisaBazaar --> UpsertProducts
     UpsertProducts --> ProductsTable
 
     MatchWebhook --> Stage1SQL
-    UsersTable & ProductsTable --> Stage1SQL
+    UsersTable --> Stage1SQL
+    ProductsTable --> Stage1SQL
     Stage1SQL --> Stage2Score
     Stage2Score --> Stage3AI
     Stage3AI --> SaveMatches
     SaveMatches --> MatchesTable
-    SaveMatches -->|Trigger| NotifyWebhook
+    SaveMatches --> NotifyWebhook
 
     NotifyWebhook --> FetchCandidates
     MatchesTable --> FetchCandidates
@@ -299,32 +297,7 @@ Prepared for direct technical defense and architectural evaluation:
 > **Answer**: The notification service enforces a strict test-inbox firewall. It checks the destination and routes all emails to the user-configured alias (`yourname+alias@gmail.com`). Fictitious addresses from `users.csv` (`@example.com`) are never contacted. Additionally, `matches.notified` prevents duplicate notification dispatches.
 
 ---
-
-## 8. Demonstration Video Guide (5-10 Minutes)
-
-When recording your presentation, follow this 4-step sequence:
-
-1. **Architecture Walkthrough (2 mins)**:
-   - Explain the S3 Event-driven ingestion & why API Gateway direct uploads are avoided.
-   - Explain the 3-Stage Optimization Treasure Hunt funnel and show the mathematical scoring formula.
-2. **n8n Workflow Tour (3 mins)**:
-   - Open n8n UI at [http://localhost:5678](http://localhost:5678).
-   - Walk through **Workflow A**: Schedule trigger &rarr; Scrapers &rarr; PostgreSQL upsert.
-   - Walk through **Workflow B**: Webhook &rarr; Stage 1 SQL filter &rarr; Stage 2 scoring &rarr; Stage 3 AI advice &rarr; PostgreSQL persist &rarr; Webhook trigger.
-   - Walk through **Workflow C**: Webhook &rarr; PostgreSQL query &rarr; Personalized HTML builder &rarr; AWS SES node &rarr; Mark notified.
-3. **Live End-to-End Pipeline Demo (3 mins)**:
-   - Open Web Dashboard at [http://localhost:8000](http://localhost:8000).
-   - Drag & drop `users.csv` (or click "Load Sample Dataset").
-   - Click **Run Complete End-to-End Pipeline**.
-   - Watch the live terminal logs as Discovery, Ingestion, Matching, and Notification execute.
-   - Show the KPI metrics update in real-time (10,000 users, 96.4% prune rate).
-4. **Email Receipt & Verification (2 mins)**:
-   - Show the email received in your Gmail inbox (`yourname+testloan@gmail.com`).
-   - Highlight the personalized credit score badge, top 3 matched loan offers, interest rates, and AI underwriting advisory commentary.
-
----
-
-## 9. Project Repository Layout
+## 8. Project Repository Layout
 
 ```
 loan-eligibility-engine/
