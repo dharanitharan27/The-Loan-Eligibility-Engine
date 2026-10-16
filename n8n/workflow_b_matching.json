@@ -1,0 +1,145 @@
+{
+  "name": "Workflow B - User-Loan Matching (Eligibility Filter)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "match-users",
+        "options": {}
+      },
+      "id": "node-webhook-match-trigger",
+      "name": "Webhook - Ingestion Completed Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [160, 300],
+      "webhookId": "user-matching-trigger"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT u.user_id, u.name, u.email, u.monthly_income, u.credit_score, u.employment_status, u.age,\n       p.product_id, p.product_name, p.bank_name, p.interest_rate_min, p.interest_rate_max,\n       p.min_income, p.min_credit_score, p.max_loan_amount, p.processing_fee\nFROM users u\nJOIN loan_products p ON\n     u.monthly_income >= p.min_income\n AND u.credit_score >= p.min_credit_score\n AND u.age BETWEEN p.min_age AND p.max_age\n AND (p.allowed_employment_types IS NULL OR u.employment_status = ANY(p.allowed_employment_types))\n AND p.is_active = TRUE\nWHERE ($1::text IS NULL OR u.batch_id = $1);",
+        "additionalFields": {
+          "queryParams": "={{ [ $json.body?.batch_id || null ] }}"
+        }
+      },
+      "id": "node-postgres-stage1-filter",
+      "name": "PostgreSQL - Stage 1 Indexed Filter",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [400, 300],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-cred-loan-engine",
+          "name": "Postgres Loan Engine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Stage 2: Multi-Dimensional Scoring & Top-K Sifting\n// Groups surviving pairs by user_id and selects Top 3 highest-scoring products\nconst items = $input.all();\nconst userMap = {};\n\nfor (const item of items) {\n  const row = item.json;\n  const uid = row.user_id;\n  if (!userMap[uid]) {\n    userMap[uid] = {\n      user: {\n        user_id: uid,\n        name: row.name,\n        email: row.email,\n        monthly_income: parseFloat(row.monthly_income),\n        credit_score: parseInt(row.credit_score),\n        employment_status: row.employment_status,\n        age: parseInt(row.age)\n      },\n      candidates: []\n    };\n  }\n\n  const minIncome = parseFloat(row.min_income);\n  const minScore = parseInt(row.min_credit_score);\n  const minRate = parseFloat(row.interest_rate_min);\n  const income = userMap[uid].user.monthly_income;\n  const score = userMap[uid].user.credit_score;\n  const emp = userMap[uid].user.employment_status;\n\n  // 1. Credit Headroom (35%)\n  const creditHeadroom = Math.max(0, score - minScore);\n  const creditComp = Math.min(35.0, (creditHeadroom / Math.max(1, 850 - minScore)) * 35.0);\n\n  // 2. Income Surplus (30%)\n  const incomeRatio = income / Math.max(1, minIncome);\n  const incomeComp = Math.min(30.0, (incomeRatio / 2.0) * 30.0);\n\n  // 3. Rate Appeal (20%)\n  const rateComp = Math.max(5.0, Math.min(20.0, 20.0 - (minRate - 9.0) * 2.5));\n\n  // 4. Employment Stability (15%)\n  const empComp = emp === 'Salaried' ? 15.0 : 13.5;\n\n  const totalScore = Math.min(100.0, Math.max(10.0, Math.round((creditComp + incomeComp + rateComp + empComp) * 100) / 100));\n  const reasons = [\n    `Credit score ${score} exceeds threshold of ${minScore} (+${creditHeadroom} pts)`,\n    `Monthly income ₹${income.toLocaleString()} provides ${incomeRatio.toFixed(1)}x coverage over minimum ₹${minIncome.toLocaleString()}`,\n    `Annualized starting rate at ${minRate.toFixed(2)}% p.a.`,\n    `Employment category '${emp}' verified under prime lending guidelines`\n  ];\n\n  userMap[uid].candidates.push({\n    product_id: row.product_id,\n    product_name: row.product_name,\n    bank_name: row.bank_name,\n    interest_rate_min: minRate,\n    max_loan_amount: parseFloat(row.max_loan_amount),\n    score: totalScore,\n    reasons: reasons\n  });\n}\n\nconst output = [];\nfor (const uid in userMap) {\n  const userObj = userMap[uid];\n  userObj.candidates.sort((a, b) => b.score - a.score);\n  const top3 = userObj.candidates.slice(0, 3);\n\n  // Stage 3: Synthesize qualitative advice for the user profile\n  const bestProd = top3[0];\n  const scoreVal = userObj.user.credit_score;\n  const incomeVal = userObj.user.monthly_income;\n  let advice = '';\n  if (scoreVal >= 750) {\n    advice = `Exceptional credit standing (${scoreVal}) places you in the Tier-1 borrower category. ${bestProd.product_name} offers the lowest APR with maximum loan headroom. Leverage your high credit tier for zero processing fee waivers.`;\n  } else {\n    advice = `Strong financial profile meeting all solvency criteria. ${bestProd.product_name} provides the most competitive interest terms at ${bestProd.interest_rate_min}% p.a.`;\n  }\n\n  for (const m of top3) {\n    output.push({\n      json: {\n        user_id: uid,\n        product_id: m.product_id,\n        eligibility_score: m.score,\n        match_reasons: JSON.stringify(m.reasons),\n        ai_recommendation: advice,\n        user_name: userObj.user.name,\n        user_email: userObj.user.email\n      }\n    });\n  }\n}\n\nreturn output;"
+      },
+      "id": "node-code-stage2-3",
+      "name": "Code - Stage 2 & 3 Optimization Sifter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO matches (\n  user_id, product_id, eligibility_score, match_reasons, ai_recommendation, notified, created_at\n) VALUES (\n  $1, $2, $3, $4::jsonb, $5, FALSE, CURRENT_TIMESTAMP\n)\nON CONFLICT (user_id, product_id) DO UPDATE SET\n  eligibility_score = EXCLUDED.eligibility_score,\n  match_reasons = EXCLUDED.match_reasons,\n  ai_recommendation = EXCLUDED.ai_recommendation,\n  created_at = CURRENT_TIMESTAMP;",
+        "additionalFields": {
+          "queryParams": "={{ [ $json.user_id, $json.product_id, $json.eligibility_score, $json.match_reasons, $json.ai_recommendation ] }}"
+        }
+      },
+      "id": "node-postgres-save-matches",
+      "name": "PostgreSQL - Persist Matches",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [880, 300],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-cred-loan-engine",
+          "name": "Postgres Loan Engine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/notify-users",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "event",
+              "value": "MATCHING_COMPLETED"
+            },
+            {
+              "name": "timestamp",
+              "value": "={{ $now.toISO() }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "id": "node-http-trigger-notification",
+      "name": "HTTP - Trigger Notification Workflow C",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 300],
+      "continueOnFail": true
+    }
+  ],
+  "connections": {
+    "Webhook - Ingestion Completed Trigger": {
+      "main": [
+        [
+          {
+            "node": "PostgreSQL - Stage 1 Indexed Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PostgreSQL - Stage 1 Indexed Filter": {
+      "main": [
+        [
+          {
+            "node": "Code - Stage 2 & 3 Optimization Sifter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Stage 2 & 3 Optimization Sifter": {
+      "main": [
+        [
+          {
+            "node": "PostgreSQL - Persist Matches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PostgreSQL - Persist Matches": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Trigger Notification Workflow C",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

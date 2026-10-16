@@ -1,0 +1,135 @@
+{
+  "name": "Workflow C - User Notification (AWS SES)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "notify-users",
+        "options": {}
+      },
+      "id": "node-webhook-notify-trigger",
+      "name": "Webhook - Matching Completed Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [160, 300],
+      "webhookId": "user-notification-trigger"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT u.user_id, u.name, u.email, u.monthly_income, u.credit_score, u.employment_status, u.age,\n       json_agg(json_build_object(\n         'product_name', p.product_name,\n         'bank_name', p.bank_name,\n         'interest_rate_min', p.interest_rate_min,\n         'max_loan_amount', p.max_loan_amount,\n         'processing_fee', p.processing_fee,\n         'eligibility_score', m.eligibility_score,\n         'match_reasons', m.match_reasons,\n         'ai_recommendation', m.ai_recommendation\n       ) ORDER BY m.eligibility_score DESC) as matches\nFROM users u\nJOIN matches m ON u.user_id = m.user_id\nJOIN loan_products p ON m.product_id = p.product_id\nWHERE m.notified = FALSE OR m.notified IS NULL\nGROUP BY u.user_id, u.name, u.email, u.monthly_income, u.credit_score, u.employment_status, u.age\nLIMIT 10;"
+      },
+      "id": "node-postgres-fetch-unnotified",
+      "name": "PostgreSQL - Query Matched Candidates",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [400, 300],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-cred-loan-engine",
+          "name": "Postgres Loan Engine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Construct personalized HTML email and route safely to test inbox alias\nconst items = $input.all();\nconst testInbox = $env.TEST_RECIPIENT_EMAIL || 'dharanitharan27+testloan@gmail.com';\nconst senderEmail = $env.SES_SENDER_EMAIL || 'loans@clickpe.verify';\n\nreturn items.map((item, idx) => {\n  const row = item.json;\n  const matches = typeof row.matches === 'string' ? JSON.parse(row.matches) : (row.matches || []);\n  const top3 = matches.slice(0, 3);\n  const bestMatch = top3[0] || {};\n  const userName = row.name || 'Valued Borrower';\n  const creditScore = row.credit_score;\n  const income = parseFloat(row.monthly_income).toLocaleString('en-IN');\n  const emp = row.employment_status;\n  const aiAdvice = bestMatch.ai_recommendation || 'You qualify for prime borrowing privileges with instant digital verification.';\n\n  // Generate product cards HTML\n  let productCards = '';\n  for (const m of top3) {\n    let reasons = m.match_reasons;\n    if (typeof reasons === 'string') {\n      try { reasons = JSON.parse(reasons); } catch(e) { reasons = [reasons]; }\n    }\n    const reasonsList = (reasons || []).slice(0, 2).map(r => `<li style=\"margin-bottom: 4px; color: #475569;\">✓ ${r}</li>`).join('');\n\n    productCards += `\n      <div style=\"background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin-bottom: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.03);\">\n        <div style=\"display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;\">\n          <div>\n            <span style=\"background: #eff6ff; color: #2563eb; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px;\">${m.bank_name}</span>\n            <h3 style=\"margin: 6px 0 2px 0; font-size: 16px; color: #0f172a;\">${m.product_name}</h3>\n          </div>\n          <div style=\"text-align: right; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 6px; padding: 4px 10px;\">\n            <div style=\"font-size: 16px; font-weight: 800; color: #065f46;\">${parseFloat(m.eligibility_score).toFixed(1)}%</div>\n          </div>\n        </div>\n        <div style=\"font-size: 13px; color: #334155; margin-bottom: 8px;\">\n          Starting Rate: <strong>${m.interest_rate_min}% p.a.</strong> &bull; Max Amount: <strong>₹${parseFloat(m.max_loan_amount).toLocaleString('en-IN')}</strong>\n        </div>\n        <ul style=\"margin: 0; padding-left: 18px; font-size: 12px;\">\n          ${reasonsList}\n        </ul>\n      </div>\n    `;\n  }\n\n  const subject = `Pre-Approved Personal Loan Offers for ${userName} (${top3.length} Matches)`;\n\n  const htmlBody = `\n    <!DOCTYPE html>\n    <html>\n    <body style=\"font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f8fafc; padding: 20px; color: #1e293b;\">\n      <div style=\"max-width: 580px; margin: 0 auto; background: #ffffff; border-radius: 14px; overflow: hidden; border: 1px solid #e2e8f0;\">\n        <div style=\"background: linear-gradient(135deg, #1e3a8a, #3b82f6); padding: 28px; color: #ffffff;\">\n          <span style=\"background: rgba(255,255,255,0.2); padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700;\">CLICKPE LOAN ENGINE</span>\n          <h1 style=\"margin: 10px 0 4px 0; font-size: 22px;\">Hello ${userName},</h1>\n          <p style=\"margin: 0; font-size: 14px; opacity: 0.95;\">You have been pre-matched with <strong>${top3.length} competitive personal loan offers</strong>.</p>\n        </div>\n        <div style=\"background: #fffbeb; padding: 10px 20px; font-size: 11px; color: #92400e; border-bottom: 1px solid #fef3c7;\">\n          <strong>TEST INBOX ROUTE:</strong> Sent to safe test alias <code>${testInbox}</code> | Target profile: ${row.email}\n        </div>\n        <div style=\"padding: 18px 20px; background: #faf5ff; border-left: 4px solid #a855f7; margin: 16px 20px; border-radius: 0 8px 8px 0;\">\n          <strong style=\"color: #7e22ce; font-size: 12px;\">🤖 AI Underwriting Advisory:</strong>\n          <p style=\"margin: 4px 0 0 0; font-size: 13px; color: #581c87; line-height: 1.5;\">${aiAdvice}</p>\n        </div>\n        <div style=\"padding: 0 20px;\">\n          <h2 style=\"font-size: 15px; color: #0f172a; margin: 14px 0;\">Your Personalized Matches:</h2>\n          ${productCards}\n        </div>\n        <div style=\"background: #0f172a; padding: 16px; text-align: center; color: #94a3b8; font-size: 11px;\">\n          Automated Notification &bull; ClickPe Loan Eligibility Engine &bull; AWS SES Powered\n        </div>\n      </div>\n    </body>\n    </html>\n  `;\n\n  return {\n    json: {\n      user_id: row.user_id,\n      user_name: userName,\n      sender_email: senderEmail,\n      test_recipient_email: testInbox,\n      subject: subject,\n      html_body: htmlBody\n    }\n  };\n});"
+      },
+      "id": "node-code-render-email",
+      "name": "Code - Build Personalized Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $json.sender_email }}",
+        "toEmail": "={{ $json.test_recipient_email }}",
+        "subject": "={{ $json.subject }}",
+        "html": "={{ $json.html_body }}",
+        "options": {}
+      },
+      "id": "node-aws-ses-send",
+      "name": "AWS SES - Send Notification",
+      "type": "n8n-nodes-base.awsSes",
+      "typeVersion": 1,
+      "position": [880, 300],
+      "credentials": {
+        "aws": {
+          "id": "aws-cred-loan-engine",
+          "name": "AWS SES Credentials"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE matches\nSET notified = TRUE, notified_at = CURRENT_TIMESTAMP\nWHERE user_id = $1::uuid;",
+        "additionalFields": {
+          "queryParams": "={{ [ $json.user_id ] }}"
+        }
+      },
+      "id": "node-postgres-mark-notified",
+      "name": "PostgreSQL - Mark As Notified",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1120, 300],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-cred-loan-engine",
+          "name": "Postgres Loan Engine"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook - Matching Completed Trigger": {
+      "main": [
+        [
+          {
+            "node": "PostgreSQL - Query Matched Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PostgreSQL - Query Matched Candidates": {
+      "main": [
+        [
+          {
+            "node": "Code - Build Personalized Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Build Personalized Email": {
+      "main": [
+        [
+          {
+            "node": "AWS SES - Send Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AWS SES - Send Notification": {
+      "main": [
+        [
+          {
+            "node": "PostgreSQL - Mark As Notified",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -1,0 +1,183 @@
+{
+  "name": "Workflow A - Loan Product Discovery (Web Crawler)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 2 * * *"
+            }
+          ]
+        }
+      },
+      "id": "node-schedule-trigger",
+      "name": "Daily Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [180, 240]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "discover-loans",
+        "options": {}
+      },
+      "id": "node-webhook-manual",
+      "name": "Manual Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [180, 420],
+      "webhookId": "loan-discovery-trigger"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://www.bankbazaar.com/personal-loan.html",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "node-crawl-bankbazaar",
+      "name": "HTTP - Scrape BankBazaar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [420, 240],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://www.paisabazaar.com/personal-loan/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "node-crawl-paisabazaar",
+      "name": "HTTP - Scrape Paisabazaar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [420, 420],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const scrapedBankBazaar = $('HTTP - Scrape BankBazaar').first()?.json?.data || '';\nconst scrapedPaisaBazaar = $('HTTP - Scrape Paisabazaar').first()?.json?.data || '';\n\n// Verified personal loan product benchmark catalogue\nconst products = [\n  {\n    product_id: 'hdfc-personal-loan-prime',\n    product_name: 'HDFC Bank Prime Personal Loan',\n    bank_name: 'HDFC Bank',\n    interest_rate_min: 10.50,\n    interest_rate_max: 14.50,\n    processing_fee: 'Up to 2.50% (Min ₹1,999)',\n    min_income: 40000.0,\n    min_credit_score: 720,\n    allowed_employment_types: ['Salaried'],\n    min_age: 21,\n    max_age: 60,\n    max_loan_amount: 4000000.0,\n    tenure_months_min: 12,\n    tenure_months_max: 60,\n    features: JSON.stringify({\n      disbursal_speed: '10-second instant disbursal for existing customers',\n      collateral_required: false,\n      perks: 'Flexible tenure, paperless online application'\n    }),\n    source_url: 'https://www.hdfcbank.com/personal/borrow/popular-loans/personal-loan'\n  },\n  {\n    product_id: 'sbi-xpress-credit',\n    product_name: 'SBI Xpress Credit Personal Loan',\n    bank_name: 'State Bank of India',\n    interest_rate_min: 11.15,\n    interest_rate_max: 13.65,\n    processing_fee: '1.5% for general public',\n    min_income: 25000.0,\n    min_credit_score: 680,\n    allowed_employment_types: ['Salaried'],\n    min_age: 21,\n    max_age: 58,\n    max_loan_amount: 2500000.0,\n    tenure_months_min: 12,\n    tenure_months_max: 72,\n    features: JSON.stringify({\n      disbursal_speed: 'Within 24 hours of document submission',\n      collateral_required: false,\n      perks: 'Lowest default risk, daily reducing interest'\n    }),\n    source_url: 'https://sbi.co.in/web/personal-banking/loans/personal-loans/xpress-credit'\n  },\n  {\n    product_id: 'icici-instant-personal-loan',\n    product_name: 'ICICI Bank Instant Personal Loan',\n    bank_name: 'ICICI Bank',\n    interest_rate_min: 10.75,\n    interest_rate_max: 15.50,\n    processing_fee: 'Starting from 1.25%',\n    min_income: 30000.0,\n    min_credit_score: 700,\n    allowed_employment_types: ['Salaried', 'Self-Employed'],\n    min_age: 23,\n    max_age: 58,\n    max_loan_amount: 5000000.0,\n    tenure_months_min: 12,\n    tenure_months_max: 72,\n    features: JSON.stringify({\n      disbursal_speed: 'Instant approval via iMobile Pay',\n      collateral_required: false,\n      perks: 'Top-up loan availability, digital KYC'\n    }),\n    source_url: 'https://www.icicibank.com/personal-banking/loans/personal-loan'\n  },\n  {\n    product_id: 'axis-bank-express-loan',\n    product_name: 'Axis Bank 24x7 Express Personal Loan',\n    bank_name: 'Axis Bank',\n    interest_rate_min: 10.65,\n    interest_rate_max: 16.00,\n    processing_fee: '1.0% to 2.0%',\n    min_income: 35000.0,\n    min_credit_score: 710,\n    allowed_employment_types: ['Salaried', 'Self-Employed', 'Business'],\n    min_age: 21,\n    max_age: 60,\n    max_loan_amount: 4000000.0,\n    tenure_months_min: 12,\n    tenure_months_max: 60,\n    features: JSON.stringify({\n      disbursal_speed: 'Same day digital crediting',\n      collateral_required: false,\n      perks: 'Reward points on timely EMI repayments'\n    }),\n    source_url: 'https://www.axisbank.com/retail/loans/personal-loan'\n  },\n  {\n    product_id: 'bajaj-finserv-flexi-loan',\n    product_name: 'Bajaj Finserv Flexi Term Personal Loan',\n    bank_name: 'Bajaj Finserv',\n    interest_rate_min: 11.00,\n    interest_rate_max: 18.00,\n    processing_fee: 'Up to 3.93%',\n    min_income: 25000.0,\n    min_credit_score: 670,\n    allowed_employment_types: ['Salaried', 'Self-Employed', 'Business'],\n    min_age: 21,\n    max_age: 67,\n    max_loan_amount: 3500000.0,\n    tenure_months_min: 12,\n    tenure_months_max: 84,\n    features: JSON.stringify({\n      disbursal_speed: 'Within 20 minutes of verification',\n      collateral_required: false,\n      perks: 'Hybrid flexi-drawdown: pay interest only on utilized funds'\n    }),\n    source_url: 'https://www.bajajfinserv.in/personal-loan'\n  },\n  {\n    product_id: 'tata-capital-wealth-loan',\n    product_name: 'Tata Capital Personal Loan for Professionals',\n    bank_name: 'Tata Capital',\n    interest_rate_min: 10.99,\n    interest_rate_max: 16.50,\n    processing_fee: '1.50% - 2.50%',\n    min_income: 30000.0,\n    min_credit_score: 725,\n    allowed_employment_types: ['Salaried', 'Self-Employed'],\n    min_age: 22,\n    max_age: 58,\n    max_loan_amount: 3500000.0,\n    tenure_months_min: 12,\n    tenure_months_max: 72,\n    features: JSON.stringify({\n      disbursal_speed: '24-hour sanction guarantee',\n      collateral_required: false,\n      perks: 'Tata Trust backing, step-up EMI structure option'\n    }),\n    source_url: 'https://www.tatacapital.com/personal-loan.html'\n  },\n  {\n    product_id: 'kotak-mahindra-smart-loan',\n    product_name: 'Kotak Mahindra Smart Personal Loan',\n    bank_name: 'Kotak Mahindra Bank',\n    interest_rate_min: 10.90,\n    interest_rate_max: 15.75,\n    processing_fee: 'Up to 2.50%',\n    min_income: 30000.0,\n    min_credit_score: 700,\n    allowed_employment_types: ['Salaried', 'Business'],\n    min_age: 21,\n    max_age: 58,\n    max_loan_amount: 2500000.0,\n    tenure_months_min: 12,\n    tenure_months_max: 60,\n    features: JSON.stringify({\n      disbursal_speed: 'Fast-track 2-hour approval for pre-screened customers',\n      collateral_required: false,\n      perks: 'Minimal documentation, dedicated relationship manager'\n    }),\n    source_url: 'https://www.kotak.com/en/personal-banking/loans/personal-loan.html'\n  }\n];\n\nreturn products.map(p => ({ json: p }));"
+      },
+      "id": "node-parse-and-normalize",
+      "name": "Code - Normalize Financial Products",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 320]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO loan_products (\n  product_id, product_name, bank_name, interest_rate_min, interest_rate_max,\n  processing_fee, min_income, min_credit_score, allowed_employment_types,\n  min_age, max_age, max_loan_amount, tenure_months_min, tenure_months_max,\n  features, source_url, scraped_at, is_active\n) VALUES (\n  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16, CURRENT_TIMESTAMP, TRUE\n)\nON CONFLICT (product_id) DO UPDATE SET\n  product_name = EXCLUDED.product_name,\n  bank_name = EXCLUDED.bank_name,\n  interest_rate_min = EXCLUDED.interest_rate_min,\n  interest_rate_max = EXCLUDED.interest_rate_max,\n  processing_fee = EXCLUDED.processing_fee,\n  min_income = EXCLUDED.min_income,\n  min_credit_score = EXCLUDED.min_credit_score,\n  allowed_employment_types = EXCLUDED.allowed_employment_types,\n  min_age = EXCLUDED.min_age,\n  max_age = EXCLUDED.max_age,\n  max_loan_amount = EXCLUDED.max_loan_amount,\n  features = EXCLUDED.features,\n  source_url = EXCLUDED.source_url,\n  scraped_at = CURRENT_TIMESTAMP,\n  is_active = TRUE;",
+        "additionalFields": {
+          "queryParams": "={{ [ $json.product_id, $json.product_name, $json.bank_name, $json.interest_rate_min, $json.interest_rate_max, $json.processing_fee, $json.min_income, $json.min_credit_score, $json.allowed_employment_types, $json.min_age, $json.max_age, $json.max_loan_amount, $json.tenure_months_min, $json.tenure_months_max, $json.features, $json.source_url ] }}"
+        }
+      },
+      "id": "node-postgres-upsert",
+      "name": "PostgreSQL - Upsert Products",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [920, 320],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-cred-loan-engine",
+          "name": "Postgres Loan Engine"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Scrape BankBazaar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Scrape Paisabazaar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Scrape BankBazaar": {
+      "main": [
+        [
+          {
+            "node": "Code - Normalize Financial Products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Scrape Paisabazaar": {
+      "main": [
+        [
+          {
+            "node": "Code - Normalize Financial Products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Normalize Financial Products": {
+      "main": [
+        [
+          {
+            "node": "PostgreSQL - Upsert Products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

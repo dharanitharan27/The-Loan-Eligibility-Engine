@@ -1,0 +1,63 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: loan-engine-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: loan_engine
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d loan_engine"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - loan-network
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: loan-engine-n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678/
+      - GENERIC_TIMEZONE=Asia/Kolkata
+      - N8N_DEFAULT_BINARY_DATA_MODE=filesystem
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=loan_engine
+      - DB_POSTGRESDB_USER=postgres
+      - DB_POSTGRESDB_PASSWORD=postgrespassword
+      - DB_POSTGRESDB_SCHEMA=n8n_system
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=168
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./data:/data:ro
+      - ./n8n:/n8n_workflows:ro
+    networks:
+      - loan-network
+
+volumes:
+  pgdata:
+    driver: local
+  n8n_data:
+    driver: local
+
+networks:
+  loan-network:
+    driver: bridge

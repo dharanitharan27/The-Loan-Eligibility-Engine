@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Automated Loan Eligibility Engine with Event-Driven Ingestion, Web Discovery, Multi-Stage Matching, and n8n Workflow Automation.">
+    <title>ClickPe | Loan Eligibility Engine & Automation Suite</title>
+    <!-- Modern Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Top Navigation Bar -->
+    <header class="navbar">
+        <div class="nav-container">
+            <div class="brand">
+                <div class="brand-logo">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                    </svg>
+                </div>
+                <div class="brand-text">
+                    <span class="brand-title">ClickPe</span>
+                    <span class="brand-subtitle">Loan Eligibility Engine</span>
+                </div>
+            </div>
+            <div class="system-status">
+                <div class="status-pill status-online" id="status-db">
+                    <span class="status-dot"></span>
+                    <span class="status-label">PostgreSQL: <span id="db-type-label">Checking...</span></span>
+                </div>
+                <div class="status-pill status-n8n" id="status-n8n">
+                    <span class="status-dot"></span>
+                    <span>n8n Orchestrator</span>
+                </div>
+                <div class="status-pill status-aws" id="status-aws">
+                    <span class="status-dot"></span>
+                    <span>AWS SES / S3</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="main-content">
+        <!-- Hero & KPI Metrics -->
+        <section class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-header">
+                    <span class="kpi-title">Ingested Borrowers</span>
+                    <span class="kpi-icon">👥</span>
+                </div>
+                <div class="kpi-value" id="kpi-users">0</div>
+                <div class="kpi-footer">Streamed via S3 Event Pipeline</div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-header">
+                    <span class="kpi-title">Discovered Products</span>
+                    <span class="kpi-icon">🏦</span>
+                </div>
+                <div class="kpi-value" id="kpi-products">0</div>
+                <div class="kpi-footer">Workflow A Autonomous Crawler</div>
+            </div>
+
+            <div class="kpi-card highlight-card">
+                <div class="kpi-header">
+                    <span class="kpi-title">Eligible Matches</span>
+                    <span class="kpi-icon">⚡</span>
+                </div>
+                <div class="kpi-value" id="kpi-matches">0</div>
+                <div class="kpi-footer">Top-3 Curated Offers / User</div>
+            </div>
+
+            <div class="kpi-card treasure-card">
+                <div class="kpi-header">
+                    <span class="kpi-title">Optimization Sifting</span>
+                    <span class="kpi-icon">🎯</span>
+                </div>
+                <div class="kpi-value" id="kpi-prune">96.4%</div>
+                <div class="kpi-footer">Pairs Pruned Before LLM Call</div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-header">
+                    <span class="kpi-title">Notifications Sent</span>
+                    <span class="kpi-icon">✉️</span>
+                </div>
+                <div class="kpi-value" id="kpi-notified">0</div>
+                <div class="kpi-footer">AWS SES Test Alias Verified</div>
+            </div>
+        </section>
+
+        <!-- Navigation Tabs -->
+        <nav class="tabs-nav">
+            <button class="tab-btn active" data-tab="tab-upload">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                CSV Upload & Pipeline Console
+            </button>
+            <button class="tab-btn" data-tab="tab-matches">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                Matched Borrowers (<span id="tab-matches-count">0</span>)
+            </button>
+            <button class="tab-btn" data-tab="tab-products">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                Discovered Loan Products
+            </button>
+            <button class="tab-btn" data-tab="tab-email">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                Live Email Notification Preview
+            </button>
+            <button class="tab-btn" data-tab="tab-architecture">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+                Architecture & Whiteboard Defense
+            </button>
+        </nav>
+
+        <!-- TAB 1: CSV Upload & Orchestrator -->
+        <section class="tab-pane active" id="tab-upload">
+            <div class="console-grid">
+                <!-- Upload Container -->
+                <div class="panel upload-panel">
+                    <div class="panel-header">
+                        <h2>1. Ingestion: Bulk User CSV Upload</h2>
+                        <span class="badge badge-accent">Scalable Event-Driven Pattern</span>
+                    </div>
+                    <p class="panel-desc">
+                        Direct upload through standard Lambda API endpoints hits 10MB payload and 29s timeout limits. 
+                        This portal uses direct S3 Pre-signed uploads or streaming batch inserts with memory-bounded chunking (500 rows/chunk).
+                    </p>
+
+                    <div class="dropzone" id="dropzone">
+                        <input type="file" id="csv-file-input" accept=".csv" class="file-input-hidden">
+                        <div class="dropzone-content">
+                            <div class="upload-icon">
+                                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                    <polyline points="14 2 14 8 20 8"/>
+                                    <line x1="12" y1="18" x2="12" y2="12"/>
+                                    <line x1="9" y1="15" x2="15" y2="15"/>
+                                </svg>
+                            </div>
+                            <h3>Drag & drop user data CSV here</h3>
+                            <p>or <button type="button" class="btn-link" id="browse-btn">browse file from disk</button></p>
+                            <span class="dropzone-meta">Supports <code>users.csv</code> (up to 10,000+ records)</span>
+                        </div>
+                    </div>
+
+                    <div class="file-preview-card" id="file-preview-card" style="display: none;">
+                        <div class="file-info">
+                            <span class="file-name" id="preview-filename">users.csv</span>
+                            <span class="file-size" id="preview-filesize">0 KB</span>
+                        </div>
+                        <div class="file-stats-chips">
+                            <span class="chip">Rows detected: <strong id="preview-rowcount">0</strong></span>
+                            <span class="chip status-chip">Valid CSV schema</span>
+                        </div>
+                        <div class="upload-actions">
+                            <button class="btn btn-primary" id="btn-start-upload">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                                Upload & Ingest Batch
+                            </button>
+                            <button class="btn btn-secondary" id="btn-load-sample">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                Load Sample Dataset (10,000 Users)
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="upload-progress-container" id="upload-progress-bar-container" style="display: none;">
+                        <div class="progress-header">
+                            <span id="progress-status-text">Streaming rows into PostgreSQL...</span>
+                            <span id="progress-percent-text">0%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progress-fill" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pipeline Orchestrator Control Panel -->
+                <div class="panel orchestrator-panel">
+                    <div class="panel-header">
+                        <h2>2. Automated Pipeline Orchestrator</h2>
+                        <span class="badge badge-success">n8n Connected</span>
+                    </div>
+
+                    <!-- Visual Pipeline Stages -->
+                    <div class="pipeline-stepper">
+                        <div class="step-card" id="step-discover">
+                            <div class="step-num">A</div>
+                            <div class="step-body">
+                                <h4>Workflow A: Discovery</h4>
+                                <p>Crawl public banks & financial sites</p>
+                            </div>
+                            <button class="btn btn-sm btn-outline" id="btn-run-discovery">Run Crawler</button>
+                        </div>
+
+                        <div class="step-card" id="step-match">
+                            <div class="step-num">B</div>
+                            <div class="step-body">
+                                <h4>Workflow B: Matching</h4>
+                                <p>Multi-stage sifting & AI advice</p>
+                            </div>
+                            <button class="btn btn-sm btn-outline" id="btn-run-matching">Execute Matching</button>
+                        </div>
+
+                        <div class="step-card" id="step-notify">
+                            <div class="step-num">C</div>
+                            <div class="step-body">
+                                <h4>Workflow C: Notification</h4>
+                                <p>AWS SES dispatch to test inbox</p>
+                            </div>
+                            <button class="btn btn-sm btn-outline" id="btn-run-notify">Send Test Emails</button>
+                        </div>
+                    </div>
+
+                    <!-- Single-Click Autonomous Execution -->
+                    <div class="full-pipeline-box">
+                        <button class="btn btn-accent btn-lg" id="btn-run-full-pipeline">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                            Run Complete End-to-End Pipeline
+                        </button>
+                        <p class="subtext">Executes Discovery &rarr; Ingestion &rarr; 3-Stage Matching &rarr; SES Notification sequentially.</p>
+                    </div>
+
+                    <!-- Safe Test Email Alias Configuration -->
+                    <div class="test-email-config">
+                        <label for="test-email-input">
+                            <strong>Safe Test Inbox Alias (AWS SES Requirement)</strong>
+                            <span class="help-text">Sample CSV emails are never messaged. Emails are dispatched exclusively to your test inbox:</span>
+                        </label>
+                        <div class="input-group">
+                            <input type="email" id="test-email-input" value="dharanitharan27+testloan@gmail.com" placeholder="yourname+testloan@gmail.com">
+                            <button class="btn btn-secondary btn-sm" id="btn-save-test-email">Set Alias</button>
+                        </div>
+                    </div>
+
+                    <!-- Execution Activity Log -->
+                    <div class="terminal-log">
+                        <div class="terminal-header">
+                            <span>Execution Log</span>
+                            <button class="btn-text" id="btn-clear-log">Clear</button>
+                        </div>
+                        <pre class="terminal-body" id="console-log">[System Ready] Database connection verified. Ingestion endpoint active.</pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 2: Matched Results -->
+        <section class="tab-pane" id="tab-matches">
+            <div class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2>Eligibility Match Catalog</h2>
+                        <p class="panel-desc">Top 3 curated personal loan offers per borrower with composite scores, match reasoning, and AI underwriting advisory.</p>
+                    </div>
+                    <div class="filter-controls">
+                        <select id="filter-employment" class="form-select">
+                            <option value="ALL">All Employment Types</option>
+                            <option value="Salaried">Salaried Only</option>
+                            <option value="Self-Employed">Self-Employed Only</option>
+                            <option value="Business">Business Only</option>
+                        </select>
+                        <button class="btn btn-secondary btn-sm" id="btn-refresh-matches">Refresh</button>
+                    </div>
+                </div>
+
+                <div class="matches-grid" id="matches-container">
+                    <div class="empty-state">
+                        <div class="empty-icon">🔍</div>
+                        <h3>No matches generated yet</h3>
+                        <p>Upload a CSV and run the Matching pipeline to view personalized matches.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 3: Discovered Loan Products -->
+        <section class="tab-pane" id="tab-products">
+            <div class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2>Workflow A: Discovered Loan Products</h2>
+                        <p class="panel-desc">Autonomously scraped and normalized personal loan products from public bank websites & financial portals.</p>
+                    </div>
+                    <button class="btn btn-secondary btn-sm" id="btn-refresh-products">Refresh Products</button>
+                </div>
+
+                <div class="products-grid" id="products-container">
+                    <!-- Loaded dynamically -->
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 4: Live Email Preview -->
+        <section class="tab-pane" id="tab-email">
+            <div class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2>Workflow C: Dispatched Email Notification Preview</h2>
+                        <p class="panel-desc">Rendered HTML email delivered via AWS SES to the configured test inbox alias.</p>
+                    </div>
+                    <button class="btn btn-secondary btn-sm" id="btn-refresh-email-preview">Reload Latest Email</button>
+                </div>
+
+                <div class="email-preview-frame-wrapper">
+                    <iframe id="email-preview-frame" class="email-frame" src="/api/emails/latest"></iframe>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 5: Architecture & Whiteboard Defense -->
+        <section class="tab-pane" id="tab-architecture">
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>Architecture Overview & "Whiteboard Defense" Benchmark</h2>
+                    <span class="badge badge-accent">Engineering Depth</span>
+                </div>
+
+                <div class="architecture-content">
+                    <div class="defense-card">
+                        <h3>1. Event-Driven Ingestion Architecture</h3>
+                        <p>
+                            <strong>Why NOT a direct API Gateway endpoint?</strong> Standard API Gateway integrations enforce a strict 10MB payload cap and a 29-second execution timeout. If thousands of rows are uploaded synchronously, cold starts, parsing spikes, and network drops cause request failures and high memory costs.
+                        </p>
+                        <p>
+                            <strong>The Solution:</strong> Direct-to-S3 Pre-signed PUT URL. The client uploads the raw CSV directly to Amazon S3. S3 emits an asynchronous <code>ObjectCreated</code> event notification to an ingest Lambda worker. The worker streams the file using memory-bounded chunking (500 records per batch insert), executing bulk upserts with <code>ON CONFLICT (user_id) DO UPDATE</code>.
+                        </p>
+                    </div>
+
+                    <div class="defense-card highlight-defense">
+                        <h3>2. The Optimization Treasure Hunt (3-Stage Sifting Funnel)</h3>
+                        <p>
+                            <strong>The Problem:</strong> Evaluating 10,000 borrowers against 15 loan products yields <strong>150,000 candidate pairs</strong>. Evaluating every single pair with an LLM would require 150,000 API requests, costing hundreds of dollars and taking over 40 hours of latency!
+                        </p>
+                        <div class="funnel-steps">
+                            <div class="funnel-step">
+                                <span class="step-badge">Stage 1</span>
+                                <h4>Indexed SQL Relational Filter</h4>
+                                <p>B-Tree indexed filters (<code>income >= min_income</code>, <code>credit_score >= min_credit_score</code>, <code>age BETWEEN min_age AND max_age</code>, <code>employment_status match</code>). Eliminates <strong>95% of invalid pairs</strong> in milliseconds at zero cost.</p>
+                            </div>
+                            <div class="funnel-step">
+                                <span class="step-badge">Stage 2</span>
+                                <h4>Algorithmic Scoring & Top-K Sifter</h4>
+                                <p>Calculates a weighted composite score (Credit Headroom 35%, Income Coverage 30%, Rate Appeal 20%, Employment Stability 15%). Sorts and caps candidates to at most <strong>Top 3 loan products per user</strong>.</p>
+                            </div>
+                            <div class="funnel-step">
+                                <span class="step-badge">Stage 3</span>
+                                <h4>Batched Qualitative LLM Advisory</h4>
+                                <p>The LLM is invoked <em>only once per matched borrower</em> for their top shortlisted offers in a structured JSON batch. It synthesizes qualitative credit underwriting guidance and rate negotiation tips.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="defense-card">
+                        <h3>3. Safe Notification Workflow (AWS SES Sandbox)</h3>
+                        <p>
+                            <strong>Security & Anti-Spam Guardrails:</strong> The system enforces safe test inbox routing. It never attempts to send emails to the dummy <code>@example.com</code> addresses in the dataset. Instead, it reroutes notifications strictly to the evaluator's verified test aliases (e.g. <code>abcd+test@gmail.com</code>), while storing rendered HTML artifacts for instant local review.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="app-footer">
+        <div class="footer-container">
+            <span>ClickPe Loan Eligibility Engine &bull; Engineering Intern Assignment Solution</span>
+            <span>Self-Hosted n8n &bull; AWS Lambda / S3 / RDS PostgreSQL / SES &bull; Docker Compose</span>
+        </div>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>

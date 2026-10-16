@@ -1,0 +1,145 @@
+service: loan-eligibility-engine
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: python3.11
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'ap-south-1'}
+  memorySize: 512
+  timeout: 120
+  environment:
+    STAGE: ${self:provider.stage}
+    REGION: ${self:provider.region}
+    UPLOAD_BUCKET: ${self:custom.uploadBucketName}
+    DB_HOST: ${env:DB_HOST, 'localhost'}
+    DB_PORT: ${env:DB_PORT, '5432'}
+    DB_NAME: ${env:DB_NAME, 'loan_engine'}
+    DB_USER: ${env:DB_USER, 'postgres'}
+    DB_PASSWORD: ${env:DB_PASSWORD, 'postgrespassword'}
+    N8N_WEBHOOK_URL: ${env:N8N_WEBHOOK_URL, 'http://localhost:5678/webhook/match-users'}
+    SES_SENDER_EMAIL: ${env:SES_SENDER_EMAIL, 'loans@clickpe.verify'}
+    TEST_RECIPIENT_EMAIL: ${env:TEST_RECIPIENT_EMAIL, 'user+test@example.com'}
+    GEMINI_API_KEY: ${env:GEMINI_API_KEY, ''}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - s3:GetObject
+            - s3:PutObject
+            - s3:ListBucket
+          Resource:
+            - arn:aws:s3:::${self:custom.uploadBucketName}
+            - arn:aws:s3:::${self:custom.uploadBucketName}/*
+        - Effect: Allow
+          Action:
+            - ses:SendEmail
+            - ses:SendRawEmail
+          Resource: "*"
+        - Effect: Allow
+          Action:
+            - rds-db:connect
+          Resource: "*"
+
+custom:
+  uploadBucketName: ${self:service}-${self:provider.stage}-user-csv-uploads
+
+package:
+  patterns:
+    - '!node_modules/**'
+    - '!.git/**'
+    - '!venv/**'
+    - '!frontend/**'
+    - 'backend/**'
+
+functions:
+  # 1. API: Generate S3 Presigned URL for direct, limit-free client upload
+  getPresignedUrl:
+    handler: backend/presign_lambda.handler
+    description: Generates a secure pre-signed S3 PUT URL for uploading large user CSV files
+    events:
+      - http:
+          path: upload/presign
+          method: post
+          cors: true
+
+  # 2. Event-Driven Worker: S3 ObjectCreated trigger to parse & batch ingest CSV into PostgreSQL RDS
+  ingestUserCsv:
+    handler: backend/ingest_lambda.handler
+    description: Triggered asynchronously by S3 upload to parse & stream insert users into RDS PostgreSQL
+    events:
+      - s3:
+          bucket: ${self:custom.uploadBucketName}
+          event: s3:ObjectCreated:*
+          rules:
+            - suffix: .csv
+          existing: true
+
+  # 3. Webhook / API trigger for user-loan matching pipeline
+  triggerMatching:
+    handler: backend/matcher.lambda_handler
+    description: Executes the multi-stage optimized user-loan eligibility matching pipeline
+    events:
+      - http:
+          path: matching/trigger
+          method: post
+          cors: true
+
+resources:
+  Resources:
+    # Dedicated S3 bucket for CSV file storage
+    UserCsvUploadBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:custom.uploadBucketName}
+        CorsConfiguration:
+          CorsRules:
+            - AllowedHeaders:
+                - "*"
+              AllowedMethods:
+                - PUT
+                - POST
+                - GET
+              AllowedOrigins:
+                - "*"
+              MaxAge: 3000
+
+    # RDS PostgreSQL Database Instance (Free-tier eligible)
+    PostgresDBSubnetGroup:
+      Type: AWS::RDS::DBSubnetGroup
+      Properties:
+        DBSubnetGroupDescription: Subnets for Loan Eligibility Engine PostgreSQL
+        SubnetIds:
+          - subnet-placeholder-1
+          - subnet-placeholder-2
+
+    PostgresSecurityGroup:
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+        GroupDescription: Allow inbound PostgreSQL access from Lambda
+        SecurityGroupIngress:
+          - IpProtocol: tcp
+            FromPort: 5432
+            ToPort: 5432
+            CidrIp: 0.0.0.0/0 # Restricted in production to VPC CIDR
+
+    LoanEngineDatabase:
+      Type: AWS::RDS::DBInstance
+      Properties:
+        DBInstanceIdentifier: ${self:service}-${self:provider.stage}-db
+        AllocatedStorage: '20'
+        DBInstanceClass: db.t4g.micro
+        Engine: postgres
+        EngineVersion: '16.1'
+        MasterUsername: postgres
+        MasterUserPassword: ${env:RDS_MASTER_PASSWORD, 'LoanEnginePass2026!'}
+        DBName: loan_engine
+        VPCSecurityGroups:
+          - !Ref PostgresSecurityGroup
+        DBSubnetGroupName: !Ref PostgresDBSubnetGroup
+        PubliclyAccessible: true
+        BackupRetentionPeriod: 7
+        DeleteAutomatedBackups: true
+        DeletionProtection: false
